@@ -190,7 +190,63 @@
     </div>
 </div>
 
-<!-- MONTH PICKER, IMPORT, SETTINGS modals are included in the full file below -->
+<!-- MONTH PICKER MODAL -->
+<div onclick="if(event.target.id === 'month-picker-modal')hideMonthPicker()" id="month-picker-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-xl flex items-center justify-center z-[110]">
+    <div class="modal bg-[#111113] w-full max-w-2xl mx-4 rounded-3xl overflow-hidden">
+        <div class="px-8 py-6 border-b border-gray-800 flex items-center justify-between">
+            <h3 class="text-2xl font-semibold">Select Month</h3>
+            <div class="flex items-center gap-x-6">
+                <button onclick="changePickerYear(-1)" class="text-2xl hover:text-emerald-400">←</button>
+                <span id="picker-year" class="text-xl font-semibold w-20 text-center"></span>
+                <button onclick="changePickerYear(1)" class="text-2xl hover:text-emerald-400">→</button>
+            </div>
+            <button onclick="hideMonthPicker()" class="text-4xl leading-none text-gray-400">×</button>
+        </div>
+        <div id="month-grid" class="grid grid-cols-4 gap-4 p-8"></div>
+        <div class="px-8 pb-8">
+            <div class="text-xs text-gray-400 mb-3 flex items-center justify-between">
+                <span id="mini-month-title"></span>
+                <span class="text-emerald-400">Green = profitable • Red = losing</span>
+            </div>
+            <div id="mini-calendar" class="grid grid-cols-7 gap-px bg-gray-800 rounded-2xl p-2"></div>
+        </div>
+    </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div onclick="if(event.target.id === 'import-modal')hideImportModal()" id="import-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-xl flex items-center justify-center z-[100]">
+    <div class="modal bg-[#111113] w-full max-w-lg mx-4 rounded-3xl p-8">
+        <h3 class="text-2xl font-semibold mb-2">Import TradingView Order History</h3>
+        <p class="text-gray-400 text-sm mb-6">CSV must contain columns: Symbol, Side, Type, Qty, Fill Price, Status, Closing Time, Order ID. Only Filled orders imported. Duplicates skipped by Order ID.</p>
+        <div class="border-2 border-dashed border-gray-700 hover:border-emerald-400 rounded-3xl p-10 text-center cursor-pointer" onclick="document.getElementById('csv-input').click()">
+            <input id="csv-input" type="file" accept=".csv" class="hidden" onchange="handleCSVImport(event)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16v-4m0 0l4 4m-4-4l4-4m12 0v4m0 0l-4-4m4 4l-4 4" /></svg>
+            <p class="mt-4 font-medium">Click or drop your TradingView .csv here</p>
+        </div>
+        <div class="flex gap-x-3 mt-8">
+            <button onclick="hideImportModal()" class="flex-1 py-4 rounded-3xl border border-gray-700 font-medium">Cancel</button>
+            <button onclick="hideImportModal()" class="flex-1 py-4 bg-white text-black rounded-3xl font-semibold">Done</button>
+        </div>
+    </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div onclick="if(event.target.id === 'settings-modal')hideSettings()" id="settings-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-xl flex items-center justify-center z-[100]">
+    <div class="modal bg-[#111113] w-full max-w-md mx-4 rounded-3xl p-8">
+        <h3 class="text-xl font-semibold mb-6">Journal Settings</h3>
+        <div class="space-y-6">
+            <div>
+                <label class="block text-xs uppercase mb-2 text-gray-400">Initial Account Balance</label>
+                <div class="flex border border-gray-700 rounded-3xl px-5 items-center">
+                    <span class="text-gray-400">$</span>
+                    <input id="initial-balance-input" type="text" value="10000" class="flex-1 bg-transparent outline-none px-3 py-4 text-2xl font-semibold">
+                </div>
+            </div>
+            <div onclick="clearAllData()" class="cursor-pointer text-red-400 flex items-center justify-center py-4 border border-red-400/30 rounded-3xl hover:bg-red-400/10">Delete all data and start fresh</div>
+        </div>
+        <button onclick="saveSettings();hideSettings()" class="mt-8 w-full py-5 bg-emerald-500 text-white font-semibold rounded-3xl">SAVE SETTINGS</button>
+    </div>
+</div>
 
 <script>
     // ==================== YOUR FIREBASE CONFIG ====================
@@ -230,6 +286,7 @@
     auth.onAuthStateChanged(user => {
         currentUser = user;
         updateAuthBanner();
+        if (user) loadFromFirestore();
     });
 
     function updateAuthBanner() {
@@ -243,9 +300,7 @@
                         <div class="text-xs text-emerald-300">Data syncing across devices</div>
                     </div>
                 </div>
-                <button onclick="signOut()" class="text-white bg-red-500 hover:bg-red-600 px-5 py-1.5 rounded-3xl text-sm font-medium">
-                    Sign Out
-                </button>
+                <button onclick="signOut()" class="text-white bg-red-500 hover:bg-red-600 px-5 py-1.5 rounded-3xl text-sm font-medium">Sign Out</button>
             `;
             banner.style.background = '#052e0f';
         } else {
@@ -258,13 +313,28 @@
                     </div>
                 </div>
                 <button onclick="signInWithGoogle()" class="bg-white text-emerald-600 px-6 py-2 rounded-3xl font-semibold flex items-center gap-x-2 hover:bg-emerald-100">
-                    Sign in with Google
-                    <span class="text-xl">G</span>
+                    Sign in with Google <span class="text-xl">G</span>
                 </button>
             `;
             banner.style.background = '#22c55e';
         }
     }
+
+    async function loadFromFirestore() {
+        if (!currentUser) return;
+        const doc = await db.collection("users").doc(currentUser.uid).get();
+        if (doc.exists) journalData = doc.data();
+        renderDashboard();
+        renderCalendar();
+        renderTrades();
+    }
+
+    async function saveToFirestore() {
+        if (!currentUser) return;
+        await db.collection("users").doc(currentUser.uid).set(journalData);
+    }
+
+    function saveToLocalStorage() { saveToFirestore(); }
 
     function initTailwind() { tailwind.config = { content: [] }; }
 
